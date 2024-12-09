@@ -25,7 +25,7 @@ This project uses machine learning techniques to analyze and forecast sales for 
   - Normalizes geospatial data (`Latitude` and `Longitude`).
   - Calculates optimal `eps` using a K-Distance plot for clustering.
   - Assigns a `Cluster_ID` to each row based on DBSCAN results.
-  - One-hot encodes categorical columns and calculates `days_to_ship` (difference between order and shipping dates).
+  - Label encodes categorical columns and calculates `days_to_ship` (difference between order and shipping dates).
 - Output file: `processed_superstore_sales.csv`
 
 ### `coordinates.py`
