@@ -41,4 +41,14 @@ This project uses machine learning techniques to analyze and forecast sales for 
 ### 1. Data Preprocessing
 Run `coordinates.py` to generate the geocoded dataset:
 ```bash
-python coordinates.py
+python3 coordinates.py
+
+### 2. Feature Engineering
+Run `data-processing.py` to generate the geocoded dataset:
+```bash
+python3 data-processing.py
+
+### 3. Model
+Run `prophet-ml.py` to generate the geocoded dataset:
+```bash
+python3 prophet-ml.py
