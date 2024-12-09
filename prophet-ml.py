@@ -1,69 +1,78 @@
 import pandas as pd
 from prophet import Prophet
-import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import numpy as np
 
-# Load dataset
-file_path = 'sales-forecasting/train.csv'  # Replace with your file path
-data = pd.read_csv(file_path)
+# Load and prepare the dataset
+data = pd.read_csv('processed_superstore_sales.csv')
+data['Order Date'] = pd.to_datetime(data['Order Date'], format='%Y-%m-%d')
+data = data.rename(columns={'Order Date': 'ds', 'Sales': 'y'})
 
-# Convert Order Date to datetime
-data['Order Date'] = pd.to_datetime(data['Order Date'], format='%d/%m/%Y')
-
-# Aggregate sales data into a single time series
-overall_sales = data.groupby('Order Date')['Sales'].sum().reset_index()
-time_series_data = overall_sales.rename(columns={'Order Date': 'ds', 'Sales': 'y'})
-
-# Generate holiday dataframe
-years = range(time_series_data['ds'].dt.year.min(), time_series_data['ds'].dt.year.max() + 1)
+# Define holidays and 2-week buffer
 holidays = pd.DataFrame({
-    'holiday': ['Valentines Day'] * len(years) + ['Fourth of July'] * len(years) +
-               ['Thanksgiving'] * len(years) + ['Christmas'] * len(years),
+    'holiday': ['Valentine\'s Day'] * 10 + ['Fourth of July'] * 10 +
+               ['Thanksgiving'] * 10 + ['Christmas'] * 10,
     'ds': (
-        [f"{year}-02-14" for year in years] +
-        [f"{year}-07-04" for year in years] +
-        # Thanksgiving: Fourth Thursday of November for each year
-        [
-            pd.Timestamp(f"{year}-11-01") + pd.offsets.Week(3, weekday=3)  # 3rd week, 4th Thursday (weekday=3 is Thursday)
-            for year in years
-        ] +
-
-        [f"{year}-12-25" for year in years]
+        pd.date_range(start='2015-02-14', periods=10, freq='Y')  # Valentine's Day
+        .append(pd.date_range(start='2015-07-04', periods=10, freq='Y'))  # Fourth of July
+        .append(pd.date_range(start='2015-11-26', periods=10, freq='Y')
+                .map(lambda x: x - pd.offsets.Week(0, weekday=3)))  # Thanksgiving is 4th Thursday
+        .append(pd.date_range(start='2015-12-25', periods=10, freq='Y'))  # Christmas
     ),
-    'lower_window': [0] * len(years) * 4,  # Number of days before the holiday
-    'upper_window': [0] * len(years) * 4   # Number of days after the holiday
+    'lower_window': -14,  # 2 weeks before
+    'upper_window': 0     # No additional buffer after the holiday
 })
 
-# Split data into training and test sets
-train_data = time_series_data[:-7]  # All but the last 7 days
-test_data = time_series_data[-7:]   # Last 7 days
+# Split the data into training and testing sets
+train_data = data[:-7]  # Use all but the last 7 days for training
+test_data = data[-7:]   # Use the last 7 days for testing
 
-# Initialize Prophet model with holidays
+# Initialize the Prophet model with holidays
 model = Prophet(holidays=holidays)
-model.fit(train_data)
 
-# Create a future dataframe for forecasting
+# Add regressors
+regressors = ['Ship Mode', 'Segment', 'Category', 'Sub-Category', 'Cluster_ID', 'days_to_ship']
+for regressor in regressors:
+    model.add_regressor(regressor)
+
+# Train the model
+model.fit(train_data[['ds', 'y'] + regressors])
+
+# Create a future DataFrame for predictions
 future = model.make_future_dataframe(periods=7)
+
+# Add future values for regressors (e.g., mean values or defaults)
+future['Ship Mode'] = train_data['Ship Mode'].mode()[0]  # Most common value
+future['Segment'] = train_data['Segment'].mode()[0]
+future['Category'] = train_data['Category'].mode()[0]
+future['Sub-Category'] = train_data['Sub-Category'].mode()[0]
+future['Cluster_ID'] = train_data['Cluster_ID'].mode()[0]
+future['days_to_ship'] = train_data['days_to_ship'].mean()
+
+# Predict sales
 forecast = model.predict(future)
 
-# Evaluate model on test data
-mae = mean_absolute_error(test_data['y'], forecast['yhat'][-7:])
-rmse = np.sqrt(mean_squared_error(test_data['y'], forecast['yhat'][-7:]))
+# Evaluate performance on the test set
+y_true = test_data['y'].values
+y_pred = forecast['yhat'][-7:].values
 
-print(f"MAE: {mae}")
-print(f"RMSE: {rmse}")
+mae = mean_absolute_error(y_true, y_pred)
+rmse = np.sqrt(mean_squared_error(y_true, y_pred))
 
-# Plot and save forecast
-forecast_plot = model.plot(forecast)
-forecast_plot.savefig("sales_forecast_with_holidays.jpg")
-print("Forecast plot saved as 'sales_forecast_with_holidays.jpg'.")
+print(f"Model Performance on Test Set:")
+print(f"Mean Absolute Error (MAE): {mae:.2f}")
+print(f"Root Mean Squared Error (RMSE): {rmse:.2f}")
 
-# Plot and save forecast components
-components_plot = model.plot_components(forecast)
-components_plot.savefig("forecast_components_with_holidays.jpg")
-print("Components plot saved as 'forecast_components_with_holidays.jpg'.")
+# Save forecast results
+forecast.to_csv('./sales_forecast_with_holidays.csv', index=False)
+print("Sales forecast with holidays saved to 'sales_forecast_with_holidays.csv'.")
 
-# Save the forecast to a CSV file
-forecast.to_csv('sales_forecast_with_holidays.csv', index=False)
-print("Forecasts saved to 'sales_forecast_with_holidays.csv'.")
+# Plot the forecast
+fig = model.plot(forecast)
+fig.savefig('./sales_forecast_with_holidays_plot.png')
+print("Forecast plot saved to 'sales_forecast_with_holidays_plot.png'.")
+
+# Plot the forecast components
+fig_components = model.plot_components(forecast)
+fig_components.savefig('./sales_forecast_with_holidays_components.png')
+print("Forecast components plot saved to 'sales_forecast_with_holidays_components.png'.")
